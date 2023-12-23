@@ -1,0 +1,100 @@
+MODULE main
+
+VAR
+	timeout: boolean;
+	at_w: boolean;
+	at_e: boolean;
+	on_bridge: boolean;
+	e_state: {gn, rd};
+	w_state: {gn, rd};
+	timer: 0..5;
+	
+ASSIGN
+	init(at_w):= FALSE;
+	init(at_e):= FALSE;
+	init(on_bridge):= FALSE;
+	init(timeout):= FALSE;
+	init(w_state):= rd;
+	init(e_state):= rd;
+	init(timer):= 0;
+
+----------------------   SEMAFORO WEST  -----------------------
+	next(w_state):= case
+						timeout = TRUE : rd;
+						!at_e & at_w & !on_bridge = TRUE: gn;
+						(timeout | on_bridge = FALSE)= TRUE: rd;
+						TRUE: w_state;
+					esac;
+					
+----------------------   SEMAFORO EAST  -----------------------
+	next(e_state):= case
+						timeout = TRUE : rd;
+						!at_w & at_e & !on_bridge = TRUE : gn;
+						(timeout | on_bridge = FALSE): rd;
+						TRUE: e_state;
+					esac;
+					
+	next(timer):= case
+					timer = 0 & (e_state = gn | w_state = gn) = TRUE: 1;
+					timer = 1: 2;
+					timer = 2: 3;
+					timer = 3: 4;
+					timer = 4: 5;
+					timer = 5: 0;
+					TRUE: timer;
+					esac;
+					
+	next(timeout):= case
+						timer = 4 = TRUE: TRUE; -- como estou contando do 0 entao, 0 a 4 sao 5 tempos
+						timer >= 5 = TRUE: FALSE;
+						TRUE: timeout;
+						esac;
+						
+-- a) It is never the case that both lights are green at same time.				
+LTLSPEC G !(w_state = gn & e_state = gn)
+
+-- b) If a light is green, then eventually it goes red.
+LTLSPEC G (w_state = gn -> F w_state = rd)
+LTLSPEC G (e_state = gn -> F e_state = rd)
+
+-- c) The west light is never green for more than 5 consecutive steps.
+
+-- Consideracoes:
+--      - pensando que, se a semaforo nao pode ficar mais de 5 tempos verde, entao é equivalente
+--        a dizer que se o semaforo for verde e der o timeout (que significa ter dado mais de
+--        5 tempos), entao no futuro sera vermelho (que significa que nao ser verde)
+
+LTLSPEC G (w_state = gn & timeout -> F w_state = rd)
+
+-- d) Whenever there is a car at the west light, eventually the west light will go green,
+
+-- Consideracoes:
+--      - pensando que, 
+--      - i. if cars are on the bridge, eventually all cars are off the bridge
+--      - ii. if a car is at a red light, it stays at that light up to and including the 
+--            first step (if there is one) at which the light turns green.
+--      - entao, esse se nao tiver nenhum carro na ponte e se o outro lado estiver vermelho 
+--        entao, em um futuro o semaforo oeste ficara verde
+
+LTLSPEC G (at_w & e_state = rd & !on_bridge -> F w_state = gn)
+
+-- e) Whenever there is a car at the west light, eventually the west light will go green, 
+--    under the assumption if cars are on the bridge, eventually all cars are off the bridge.
+
+-- Consideracoes
+--      - - pensando que,
+--      - entao, esse se nao tiver nenhum carro na ponte entao, em um futuro o semaforo oeste 
+--        ficara verde
+
+LTLSPEC G (at_w & !on_bridge -> F w_state = gn)
+
+----------------------------------------	CTL    -------------------------------------------------------
+
+-- a) There exists a run on the system in which at some point the west light is green and 
+--    at some point the east light is green.
+SPEC EF(w_state = gn)
+SPEC EF(e_state = gn)
+
+-- b) Whenever the east light is green and a car is on the bridge, it is possible that the 
+--    east light then stays green forever
+SPEC AG(e_state = gn & on_bridge -> AG e_state = gn)
